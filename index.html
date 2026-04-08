@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Reporte de Fallas — Safari Indoor</title>
 <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root {
     --ink: #1a1a1a;
@@ -118,7 +119,7 @@
     <small>Sistema de reportes a proveedores</small>
   </div>
   <div class="header-actions">
-    <button class="btn btn-outline" onclick="exportCSV()">⬇ Exportar CSV</button>
+    <button class="btn btn-outline" onclick="exportCSV()">⬇ Exportar Excel</button>
     <button class="btn btn-primary" onclick="scrollToForm()">+ Nueva Falla</button>
   </div>
 </header>
@@ -182,7 +183,7 @@
     <span id="exportCount"></span>
   </div>
   <div class="export-actions">
-    <button class="btn btn-outline" onclick="exportCSV()">⬇ Descargar CSV</button>
+    <button class="btn btn-outline" onclick="exportCSV()">⬇ Descargar Excel</button>
   </div>
 </div>
 
@@ -346,21 +347,81 @@ function doPrint() {
 
 function exportCSV() {
   if (records.length === 0) { alert('No hay registros para exportar.'); return; }
-  const headers = ['ID','Proveedor','Producto/Modelo','Folio','Cantidad','Fecha Venta','Fecha Reporte','Descripcion Falla','Registrado'];
+
+  const headers = ['ID','Proveedor','Producto / Modelo','Folio','Cantidad','Fecha Venta','Fecha Reporte','Descripción de la Falla','Registrado'];
   const rows = records.map(r => [
-    r.id, r.proveedor, r.producto, r.folio || '', r.cantidad || '',
+    r.id, r.proveedor, r.producto, r.folio || '', r.cantidad ? Number(r.cantidad) : '',
     r.fecha_venta || '', r.fecha_reporte || '',
-    '"' + (r.falla || '').replace(/"/g, '""') + '"',
+    r.falla || '',
     new Date(r.created).toLocaleString('es-MX')
   ]);
-  const csv = [headers, ...rows].map(r => r.join(',')).join('\n');
-  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Safari_Fallas_${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+
+  const wsData = [headers, ...rows];
+  const ws = XLSX.utils.aoa_to_sheet(wsData);
+
+  // Column widths
+  ws['!cols'] = [
+    {wch:14},{wch:28},{wch:30},{wch:16},{wch:12},
+    {wch:16},{wch:16},{wch:50},{wch:22}
+  ];
+
+  // Header style (row 1)
+  const headerStyle = {
+    font: { bold: true, color: { rgb: 'FFFFFF' }, sz: 11, name: 'Arial' },
+    fill: { patternType: 'solid', fgColor: { rgb: 'C0440A' } },
+    alignment: { horizontal: 'center', vertical: 'center', wrapText: false },
+    border: {
+      bottom: { style: 'medium', color: { rgb: 'FFFFFF' } }
+    }
+  };
+
+  const dataStyle = {
+    font: { sz: 10, name: 'Arial' },
+    alignment: { vertical: 'center', wrapText: true },
+    border: {
+      top:    { style: 'thin', color: { rgb: 'D6D0C6' } },
+      bottom: { style: 'thin', color: { rgb: 'D6D0C6' } },
+      left:   { style: 'thin', color: { rgb: 'D6D0C6' } },
+      right:  { style: 'thin', color: { rgb: 'D6D0C6' } }
+    }
+  };
+
+  const altStyle = {
+    ...dataStyle,
+    fill: { patternType: 'solid', fgColor: { rgb: 'F7F4EF' } }
+  };
+
+  const colLetters = ['A','B','C','D','E','F','G','H','I'];
+
+  // Apply header styles
+  colLetters.forEach(col => {
+    const cell = ws[col + '1'];
+    if (cell) cell.s = headerStyle;
+  });
+
+  // Apply data row styles
+  for (let i = 0; i < rows.length; i++) {
+    const rowNum = i + 2;
+    const style = i % 2 === 0 ? dataStyle : altStyle;
+    colLetters.forEach(col => {
+      const addr = col + rowNum;
+      if (!ws[addr]) ws[addr] = { v: '', t: 's' };
+      ws[addr].s = style;
+    });
+  }
+
+  // Row heights
+  ws['!rows'] = [{ hpt: 28 }];
+  for (let i = 0; i < rows.length; i++) ws['!rows'].push({ hpt: 22 });
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Fallas');
+
+  // Workbook props
+  wb.Props = { Title: 'Reporte de Fallas Safari Indoor', Author: 'Safari Indoor' };
+
+  const fecha = new Date().toISOString().slice(0,10);
+  XLSX.writeFile(wb, `Safari_Fallas_${fecha}.xlsx`);
 }
 
 function clearForm() {
